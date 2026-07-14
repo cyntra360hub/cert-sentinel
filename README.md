@@ -1,0 +1,104 @@
+# cert-sentinel
+
+A small, deterministic Python agent that checks a configurable list of
+domains for **TLS certificate expiry** and **domain registration
+expiry**, and reports one clear all-clear-or-warnings summary per run.
+
+No LLM calls, no paid APIs, no server to run — it's a script you run on
+a schedule (cron, GitHub Actions, etc.) or by hand.
+
+## What it does
+
+For each configured domain, cert-sentinel:
+
+1. Opens a real TLS connection and reads the certificate's `notAfter`
+   date (stdlib `ssl`/`socket`, no third-party TLS library).
+2. Looks up the domain's registration expiry via [RDAP](https://rdap.org)
+   (the free, keyless, standardized successor to WHOIS — RFC 9083).
+3. Classifies each into `ok` / `warn` / `critical` / `error` against
+   configurable thresholds (default: warn at 30 days, critical at 7
+   days or already expired).
+4. Prints a report and exits non-zero if anything is `critical` or
+   `error`, so it's usable directly as a CI/cron failure signal.
+
+Default domain list: `aiopsenabler.com`, `cyntra360hub.com`,
+`github.com`, `cloudflare.com`.
+
+## Install
+
+Requires Python 3.12+.
+
+```bash
+pip install .
+```
+
+## Usage
+
+```bash
+cert-sentinel
+```
+
+Or run it as a module:
+
+```bash
+python -m cert_sentinel.cli
+```
+
+### Configuration (environment variables)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CERT_SENTINEL_DOMAINS` | the four defaults above | comma-separated domain list |
+| `CERT_SENTINEL_WARN_DAYS` | `30` | days-left threshold for `warn` |
+| `CERT_SENTINEL_CRITICAL_DAYS` | `7` | days-left threshold for `critical` |
+| `CERT_SENTINEL_TIMEOUT_SECONDS` | `10` | network timeout per check |
+
+Copy `.env.example` to `.env` to set these locally; `.env` is
+gitignored and never committed.
+
+## Optional: AiOps Enabler integration
+
+cert-sentinel can optionally report each run as a signed task event to
+[AiOps Enabler](https://aiopsenabler.com), a public-interest registry of
+verified AI agent performance. **This is opt-in and off by default** —
+the agent never phones home unless you explicitly configure credentials.
+
+To enable it:
+
+1. Install the optional reporting extra (the official SDK, not yet on
+   PyPI, installed from its GitHub subdirectory per
+   [skill.md](https://aiopsenabler.com/skill.md)):
+
+   ```bash
+   pip install ".[report]"
+   ```
+
+2. Set two environment variables (in `.env` locally, or as GitHub
+   Actions secrets in CI — see `.github/workflows/scheduled.yml`):
+
+   ```
+   CERT_SENTINEL_AGENT_KEY_ID=ak_...
+   CERT_SENTINEL_AGENT_SECRET=...
+   ```
+
+   These are the API key pair issued when this agent registered on
+   AiOps Enabler. Never commit them.
+
+With both set, each run sends a `task_started` / `task_completed` event
+pair via the `aiops-enabler` SDK, with `outcome` set to `success`
+(all clear), `escalated` (warnings only), or `failure` (any critical
+result or check error).
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+All tests run fully offline — TLS and RDAP calls are replaced with
+injected fake fetchers, so the suite never touches the network.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
