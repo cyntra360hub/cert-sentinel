@@ -44,15 +44,19 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         else DEFAULT_DOMAINS
     )
 
-    warn_days = int(source.get("CERT_SENTINEL_WARN_DAYS", DEFAULT_WARN_DAYS))
-    critical_days = int(source.get("CERT_SENTINEL_CRITICAL_DAYS", DEFAULT_CRITICAL_DAYS))
+    # `.get(key, default)` only falls back when the key is *absent* -- an
+    # explicitly empty env var would otherwise silently win over the
+    # default (and crash int()/float() on ""), so empty/unset is treated
+    # the same via `or`.
+    warn_days = int(source.get("CERT_SENTINEL_WARN_DAYS") or DEFAULT_WARN_DAYS)
+    critical_days = int(source.get("CERT_SENTINEL_CRITICAL_DAYS") or DEFAULT_CRITICAL_DAYS)
     timeout_seconds = float(
-        source.get("CERT_SENTINEL_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)
+        source.get("CERT_SENTINEL_TIMEOUT_SECONDS") or DEFAULT_TIMEOUT_SECONDS
     )
 
     key_id = source.get("CERT_SENTINEL_AGENT_KEY_ID") or None
     secret = source.get("CERT_SENTINEL_AGENT_SECRET") or None
-    base_url = source.get("CERT_SENTINEL_BASE_URL", "https://api.aiopsenabler.com")
+    base_url = source.get("CERT_SENTINEL_BASE_URL") or "https://api.aiopsenabler.com"
 
     return Config(
         domains=domains,
