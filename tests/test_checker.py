@@ -96,22 +96,60 @@ def test_run_checks_outcome_success_when_all_clear():
     )
     assert result.all_clear
     assert result.outcome == "success"
+    assert result.findings_summary is None
 
 
-def test_run_checks_outcome_escalated_when_only_warnings():
+def test_run_checks_outcome_success_when_only_warnings():
+    # A detected warning is a successful detection, not a tool failure --
+    # outcome stays "success"; the finding is surfaced via findings_summary
+    # (reported as the event's external_ref), not via a non-success outcome.
     config = Config(domains=("a.com",), warn_days=30, critical_days=7)
     result = run_checks(
         config, now=NOW, cert_fetcher=_cert_fetcher_in(20), rdap_fetcher=_rdap_fetcher_in(365)
     )
     assert not result.all_clear
-    assert not result.has_critical_or_error
-    assert result.outcome == "escalated"
+    assert not result.has_errors
+    assert result.outcome == "success"
+    assert result.findings_summary == "warn: a.com"
 
 
-def test_run_checks_outcome_failure_when_critical_present():
+def test_run_checks_outcome_success_when_critical_present():
+    # Same principle for CRITICAL (e.g. an expired cert): the agent
+    # correctly detected and reported it, so this is still "success".
     config = Config(domains=("a.com",), warn_days=30, critical_days=7)
     result = run_checks(
         config, now=NOW, cert_fetcher=_cert_fetcher_in(-5), rdap_fetcher=_rdap_fetcher_in(365)
     )
     assert result.has_critical_or_error
+    assert not result.has_errors
+    assert result.outcome == "success"
+    assert result.findings_summary == "critical: a.com"
+
+
+def test_run_checks_outcome_failure_when_check_errors():
+    # Only a genuine check failure (couldn't reach the domain at all)
+    # should report failure.
+    config = Config(domains=("a.com",), warn_days=30, critical_days=7)
+
+    def failing_cert_fetcher(domain: str, port: int, timeout: float) -> dict:
+        raise TimeoutError("connection timed out")
+
+    result = run_checks(
+        config, now=NOW, cert_fetcher=failing_cert_fetcher, rdap_fetcher=_rdap_fetcher_in(365)
+    )
+    assert result.has_errors
     assert result.outcome == "failure"
+
+
+def test_findings_summary_lists_both_critical_and_warn():
+    config = Config(domains=("crit.com", "warn.com"), warn_days=30, critical_days=7)
+
+    def cert_fetcher(domain: str, port: int, timeout: float) -> dict:
+        days = -1 if domain == "crit.com" else 20
+        expiry = NOW + timedelta(days=days)
+        return {"notAfter": expiry.strftime("%b %d %H:%M:%S %Y GMT")}
+
+    result = run_checks(
+        config, now=NOW, cert_fetcher=cert_fetcher, rdap_fetcher=_rdap_fetcher_in(365)
+    )
+    assert result.findings_summary == "critical: crit.com; warn: warn.com"

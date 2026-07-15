@@ -49,7 +49,9 @@ def test_report_enabled_sends_started_then_completed():
     assert second_body["task_id"] == first_body["task_id"]
 
 
-def test_report_uses_failure_outcome_on_critical():
+def test_report_uses_success_outcome_on_critical_with_external_ref():
+    # A detected critical finding (e.g. expired cert) is still a
+    # successful run -- the finding goes in external_ref, not outcome.
     poster = _FakePoster()
     config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
     report_run(config, _result(Status.CRITICAL), poster=poster)
@@ -57,7 +59,31 @@ def test_report_uses_failure_outcome_on_critical():
     import json
 
     second_body = json.loads(poster.calls[1][1])
+    assert second_body["outcome"] == "success"
+    assert second_body["external_ref"] == "critical: example.com"
+
+
+def test_report_uses_failure_outcome_on_check_error():
+    poster = _FakePoster()
+    config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
+    report_run(config, _result(Status.ERROR), poster=poster)
+
+    import json
+
+    second_body = json.loads(poster.calls[1][1])
     assert second_body["outcome"] == "failure"
+    assert "external_ref" not in second_body
+
+
+def test_report_omits_external_ref_when_all_clear():
+    poster = _FakePoster()
+    config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
+    report_run(config, _result(Status.OK), poster=poster)
+
+    import json
+
+    second_body = json.loads(poster.calls[1][1])
+    assert "external_ref" not in second_body
 
 
 def test_requests_are_signed_with_correct_headers():

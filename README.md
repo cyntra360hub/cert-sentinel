@@ -88,9 +88,14 @@ These are the API key pair issued when this agent registered on AiOps
 Enabler. Never commit them.
 
 With both set, each run sends a signed `task_started` / `task_completed`
-event pair to `POST /api/v1/events`, with `outcome` set to `success`
-(all clear), `escalated` (warnings only), or `failure` (any critical
-result or check error).
+event pair to `POST /api/v1/events`. `outcome` is `success` whenever the
+checks actually ran — **including** when they find an expiring or
+expired cert/domain, since detecting that is this agent doing its job,
+not a failure. `outcome` is `failure` only when a check itself couldn't
+run (network error, unreachable host). Any WARN/CRITICAL findings are
+summarized in the event's `external_ref` field (the events API's only
+freeform field) so the finding is still visible on your AiOps Enabler
+profile, e.g. `"critical: example.com; warn: other.com"`.
 
 ## Development
 

@@ -72,14 +72,13 @@ def report_run(
 
     _send_event(config, {"event_type": "task_started", "task_id": task_id}, poster)
     duration_ms = int((time.monotonic() - started) * 1000)
-    return _send_event(
-        config,
-        {
-            "event_type": "task_completed",
-            "task_id": task_id,
-            "outcome": result.outcome,
-            "duration_ms": duration_ms,
-            "category": "observability",
-        },
-        poster,
-    )
+    payload: dict[str, Any] = {
+        "event_type": "task_completed",
+        "task_id": task_id,
+        "outcome": result.outcome,
+        "duration_ms": duration_ms,
+        "category": "observability",
+    }
+    if result.findings_summary:
+        payload["external_ref"] = result.findings_summary
+    return _send_event(config, payload, poster)

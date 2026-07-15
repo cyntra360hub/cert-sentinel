@@ -46,17 +46,53 @@ class CheckResult:
 
     @property
     def has_critical_or_error(self) -> bool:
+        """Used for this CLI's own exit code (a real monitoring signal
+        for cron/CI use) -- distinct from `outcome` below, which reports
+        to AiOps Enabler and treats CRITICAL as a successful detection,
+        not a tool failure."""
         return any(d.status in (Status.CRITICAL, Status.ERROR) for d in self.domains)
+
+    @property
+    def has_errors(self) -> bool:
+        """True only when a check itself couldn't run (network failure,
+        unreachable host, etc.) -- as opposed to WARN/CRITICAL, which
+        mean the check ran fine and found a real expiring/expired
+        cert or domain. This is the only condition that should ever
+        report `outcome=failure` to AiOps Enabler; a detected expiry is
+        the agent doing its job, not the agent failing."""
+        return any(
+            d.cert_status == Status.ERROR or d.domain_status == Status.ERROR
+            for d in self.domains
+        )
+
+    @property
+    def findings_summary(self) -> str | None:
+        """A compact, human-readable summary of any WARN/CRITICAL
+        domains, for the AiOps Enabler event's `external_ref` field (the
+        only freeform field the events API offers -- there is no
+        dedicated "detail"/"message" field per openapi.json). None when
+        there's nothing to report."""
+        critical = [d.domain for d in self.domains if d.status == Status.CRITICAL]
+        warn = [d.domain for d in self.domains if d.status == Status.WARN]
+        if not critical and not warn:
+            return None
+        parts = []
+        if critical:
+            parts.append(f"critical: {', '.join(critical)}")
+        if warn:
+            parts.append(f"warn: {', '.join(warn)}")
+        return "; ".join(parts)[:255]
 
     @property
     def outcome(self) -> str:
         """Maps to the AiOps Enabler `task_completed` outcome enum
-        (success | failure | escalated)."""
-        if self.all_clear:
-            return "success"
-        if self.has_critical_or_error:
-            return "failure"
-        return "escalated"
+        (success | failure | escalated). `failure` is reserved for the
+        check itself erroring out (see `has_errors`); a completed run
+        that *found* expiring/expired certs or domains is `success` --
+        detection is this agent doing its job, and the findings are
+        reported via `external_ref` (see `findings_summary`), not via a
+        non-success outcome."""
+        return "failure" if self.has_errors else "success"
 
 
 def _days_left(expiry: datetime, now: datetime) -> int:
