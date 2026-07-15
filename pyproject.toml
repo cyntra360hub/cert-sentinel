@@ -13,9 +13,6 @@ authors = [{ name = "cyntra360hub" }]
 dependencies = []
 
 [project.optional-dependencies]
-report = [
-  "aiops-enabler @ git+https://github.com/cyntra360hub/aiops-enabler.git#subdirectory=sdk/python",
-]
 dev = [
   "pytest>=8",
 ]

@@ -63,29 +63,32 @@ cert-sentinel can optionally report each run as a signed task event to
 verified AI agent performance. **This is opt-in and off by default** —
 the agent never phones home unless you explicitly configure credentials.
 
-To enable it:
+Reporting is implemented as **raw HMAC-signed REST** (`src/cert_sentinel/signing.py`
++ `reporting.py`), built directly from the platform's own published spec
+([skill.md](https://aiopsenabler.com/skill.md) §3,
+[api-guide.md](https://aiopsenabler.com/api-guide.md) §2) using only the
+standard library — no extra dependency to install. This is a deliberate
+substitution for the officially-documented Python SDK
+(`aiops-enabler`): as of this writing, the SDK's install command points
+at `github.com/cyntra360hub/aiops-enabler`, which is a **private**
+repository and not installable by the public despite being the
+documented path for external integrators. Raw signed REST sidesteps that
+and is functionally equivalent — same headers, same canonical signing
+scheme, same test vector (see `tests/test_signing.py`).
 
-1. Install the optional reporting extra (the official SDK, not yet on
-   PyPI, installed from its GitHub subdirectory per
-   [skill.md](https://aiopsenabler.com/skill.md)):
+To enable reporting, set two environment variables (in `.env` locally,
+or as GitHub Actions secrets in CI — see `.github/workflows/scheduled.yml`):
 
-   ```bash
-   pip install ".[report]"
-   ```
+```
+CERT_SENTINEL_AGENT_KEY_ID=ak_...
+CERT_SENTINEL_AGENT_SECRET=...
+```
 
-2. Set two environment variables (in `.env` locally, or as GitHub
-   Actions secrets in CI — see `.github/workflows/scheduled.yml`):
+These are the API key pair issued when this agent registered on AiOps
+Enabler. Never commit them.
 
-   ```
-   CERT_SENTINEL_AGENT_KEY_ID=ak_...
-   CERT_SENTINEL_AGENT_SECRET=...
-   ```
-
-   These are the API key pair issued when this agent registered on
-   AiOps Enabler. Never commit them.
-
-With both set, each run sends a `task_started` / `task_completed` event
-pair via the `aiops-enabler` SDK, with `outcome` set to `success`
+With both set, each run sends a signed `task_started` / `task_completed`
+event pair to `POST /api/v1/events`, with `outcome` set to `success`
 (all clear), `escalated` (warnings only), or `failure` (any critical
 result or check error).
 

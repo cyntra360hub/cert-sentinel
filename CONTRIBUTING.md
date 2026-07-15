@@ -51,8 +51,9 @@ codebase:
 
 ## Code style
 
-- Standard library only in the core package; the AiOps Enabler SDK is an
-  optional extra (`pip install ".[report]"`), never a hard dependency.
+- Standard library only, including AiOps Enabler reporting
+  (`signing.py`/`reporting.py` implement HMAC signing and the HTTP call
+  directly via `hmac`/`hashlib`/`urllib.request` — no SDK dependency).
 - Keep network I/O behind an injectable "fetcher" parameter (see
   `tls.py` / `domain.py`) so tests never touch the network.
 - No comments explaining *what* code does — only *why*, when non-obvious.

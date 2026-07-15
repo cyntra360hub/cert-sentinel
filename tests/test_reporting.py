@@ -1,15 +1,12 @@
-import sys
-import types
-
 from cert_sentinel.checker import CheckResult, DomainResult, Status
 from cert_sentinel.config import Config
-from cert_sentinel.reporting import report_run
+from cert_sentinel.reporting import ReportingError, report_run
 
 
-def _result(outcome_status: Status) -> CheckResult:
+def _result(status: Status) -> CheckResult:
     domain = DomainResult(
         domain="example.com",
-        cert_status=outcome_status,
+        cert_status=status,
         cert_expiry=None,
         cert_days_left=None,
         domain_status=Status.OK,
@@ -19,59 +16,62 @@ def _result(outcome_status: Status) -> CheckResult:
     return CheckResult(domains=(domain,))
 
 
-class _FakeClient:
-    calls: list[tuple[str, dict]] = []
+class _FakePoster:
+    def __init__(self):
+        self.calls: list[tuple[str, bytes, dict]] = []
 
-    def __init__(self, *, agent_key_id, agent_secret, base_url):
-        self.agent_key_id = agent_key_id
-        self.agent_secret = agent_secret
-        self.base_url = base_url
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def task_started(self, *, task_id):
-        _FakeClient.calls.append(("task_started", {"task_id": task_id}))
-        return {}
-
-    def task_completed(self, *, task_id, outcome, duration_ms, category=None, external_ref=None):
-        _FakeClient.calls.append(
-            ("task_completed", {"task_id": task_id, "outcome": outcome, "category": category})
-        )
-        return {"ok": True}
+    def __call__(self, url, body, headers):
+        self.calls.append((url, body, headers))
+        return {"id": "evt_123"}
 
 
-def _install_fake_sdk(monkeypatch):
-    fake_module = types.ModuleType("aiops_enabler")
-    fake_module.AiOpsClient = _FakeClient
-    monkeypatch.setitem(sys.modules, "aiops_enabler", fake_module)
-    _FakeClient.calls = []
-
-
-def test_report_disabled_returns_none(monkeypatch):
-    _install_fake_sdk(monkeypatch)
+def test_report_disabled_returns_none():
+    poster = _FakePoster()
     config = Config(report_enabled=False)
-    assert report_run(config, _result(Status.OK)) is None
-    assert _FakeClient.calls == []
+    assert report_run(config, _result(Status.OK), poster=poster) is None
+    assert poster.calls == []
 
 
-def test_report_enabled_sends_started_then_completed(monkeypatch):
-    _install_fake_sdk(monkeypatch)
-    config = Config(
-        report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret"
-    )
-    response = report_run(config, _result(Status.OK))
-    assert response == {"ok": True}
-    kinds = [c[0] for c in _FakeClient.calls]
-    assert kinds == ["task_started", "task_completed"]
-    assert _FakeClient.calls[1][1]["outcome"] == "success"
-
-
-def test_report_uses_failure_outcome_on_critical(monkeypatch):
-    _install_fake_sdk(monkeypatch)
+def test_report_enabled_sends_started_then_completed():
+    poster = _FakePoster()
     config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
-    report_run(config, _result(Status.CRITICAL))
-    assert _FakeClient.calls[1][1]["outcome"] == "failure"
+    response = report_run(config, _result(Status.OK), poster=poster)
+    assert response == {"id": "evt_123"}
+    assert len(poster.calls) == 2
+
+    import json
+
+    first_body = json.loads(poster.calls[0][1])
+    second_body = json.loads(poster.calls[1][1])
+    assert first_body["event_type"] == "task_started"
+    assert second_body["event_type"] == "task_completed"
+    assert second_body["outcome"] == "success"
+    assert second_body["task_id"] == first_body["task_id"]
+
+
+def test_report_uses_failure_outcome_on_critical():
+    poster = _FakePoster()
+    config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
+    report_run(config, _result(Status.CRITICAL), poster=poster)
+
+    import json
+
+    second_body = json.loads(poster.calls[1][1])
+    assert second_body["outcome"] == "failure"
+
+
+def test_requests_are_signed_with_correct_headers():
+    poster = _FakePoster()
+    config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
+    report_run(config, _result(Status.OK), poster=poster)
+    for url, body, headers in poster.calls:
+        assert url.endswith("/api/v1/events")
+        assert headers["X-Agent-Key-Id"] == "ak_test"
+        assert "X-Agent-Signature" in headers
+        assert "X-Agent-Timestamp" in headers
+
+
+def test_reporting_error_carries_status_and_detail():
+    err = ReportingError(422, '{"detail": "bad request"}')
+    assert err.status_code == 422
+    assert "bad request" in err.detail
