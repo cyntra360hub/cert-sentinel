@@ -9,6 +9,8 @@ works for arbitrary TLDs without us maintaining a registry map.
 from __future__ import annotations
 
 import json
+import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -17,13 +19,29 @@ RdapFetcher = Callable[[str, float], dict]
 
 RDAP_URL_TEMPLATE = "https://rdap.org/domain/{domain}"
 
+# rdap.org's bootstrap redirect (resolving a domain to its authoritative
+# registry RDAP server) has been observed taking >10s for some TLDs
+# before succeeding -- one retry after a short pause absorbs that without
+# masking a genuinely dead endpoint (still raises after both attempts).
+_RETRY_ATTEMPTS = 2
+_RETRY_DELAY_SECONDS = 2.0
+
 
 def fetch_rdap_record(domain: str, timeout: float = 10.0) -> dict:
     """Fetch the real RDAP record for `domain` from rdap.org."""
     url = RDAP_URL_TEMPLATE.format(domain=domain)
     request = urllib.request.Request(url, headers={"Accept": "application/rdap+json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    last_error: Exception | None = None
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (TimeoutError, urllib.error.URLError) as exc:
+            last_error = exc
+            if attempt < _RETRY_ATTEMPTS - 1:
+                time.sleep(_RETRY_DELAY_SECONDS)
+    assert last_error is not None
+    raise last_error
 
 
 def get_domain_expiry(
