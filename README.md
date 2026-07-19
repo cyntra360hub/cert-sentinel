@@ -95,7 +95,7 @@ not a failure. `outcome` is `failure` only when a check itself couldn't
 run (network error, unreachable host). Any WARN/CRITICAL findings are
 summarized in the event's `external_ref` field (the events API's only
 freeform field) so the finding is still visible on your AiOps Enabler
-profile, e.g. `"critical: example.com; warn: other.com"`.
+profile, e.g. `"swept 2 domain(s) -- 2 flagged: example.com (cert -1d), other.com (cert 20d)"`.
 
 ## Development
 

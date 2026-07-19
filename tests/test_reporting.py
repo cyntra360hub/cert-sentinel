@@ -60,7 +60,7 @@ def test_report_uses_success_outcome_on_critical_with_external_ref():
 
     second_body = json.loads(poster.calls[1][1])
     assert second_body["outcome"] == "success"
-    assert second_body["external_ref"] == "critical: example.com"
+    assert second_body["external_ref"] == "swept 1 domain(s) -- 1 flagged: example.com"
 
 
 def test_report_uses_failure_outcome_on_check_error():
@@ -95,6 +95,32 @@ def test_requests_are_signed_with_correct_headers():
         assert headers["X-Agent-Key-Id"] == "ak_test"
         assert "X-Agent-Signature" in headers
         assert "X-Agent-Timestamp" in headers
+
+
+def test_duration_ms_is_never_zero_even_for_instant_runs():
+    poster = _FakePoster()
+    config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
+    report_run(config, _result(Status.OK), poster=poster)
+
+    import json
+
+    second_body = json.loads(poster.calls[1][1])
+    assert isinstance(second_body["duration_ms"], int)
+    assert second_body["duration_ms"] >= 1
+
+
+def test_duration_ms_reflects_real_elapsed_run_time():
+    import time
+
+    poster = _FakePoster()
+    config = Config(report_enabled=True, agent_key_id="ak_test", agent_secret="s3cret")
+    run_started = time.monotonic() - 2.5  # simulate a check phase that took 2.5s
+    report_run(config, _result(Status.OK), poster=poster, run_started=run_started)
+
+    import json
+
+    second_body = json.loads(poster.calls[1][1])
+    assert second_body["duration_ms"] >= 2500
 
 
 def test_reporting_error_carries_status_and_detail():

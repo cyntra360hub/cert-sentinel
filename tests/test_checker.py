@@ -110,7 +110,7 @@ def test_run_checks_outcome_success_when_only_warnings():
     assert not result.all_clear
     assert not result.has_errors
     assert result.outcome == "success"
-    assert result.findings_summary == "warn: a.com"
+    assert result.findings_summary == "swept 1 domain(s) -- 1 flagged: a.com (cert 20d)"
 
 
 def test_run_checks_outcome_success_when_critical_present():
@@ -123,7 +123,7 @@ def test_run_checks_outcome_success_when_critical_present():
     assert result.has_critical_or_error
     assert not result.has_errors
     assert result.outcome == "success"
-    assert result.findings_summary == "critical: a.com"
+    assert result.findings_summary == "swept 1 domain(s) -- 1 flagged: a.com (cert -5d)"
 
 
 def test_run_checks_outcome_failure_when_check_errors():
@@ -152,4 +152,6 @@ def test_findings_summary_lists_both_critical_and_warn():
     result = run_checks(
         config, now=NOW, cert_fetcher=cert_fetcher, rdap_fetcher=_rdap_fetcher_in(365)
     )
-    assert result.findings_summary == "critical: crit.com; warn: warn.com"
+    assert result.findings_summary == (
+        "swept 2 domain(s) -- 2 flagged: crit.com (cert -1d), warn.com (cert 20d)"
+    )

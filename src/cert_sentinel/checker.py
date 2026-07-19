@@ -70,18 +70,25 @@ class CheckResult:
         """A compact, human-readable summary of any WARN/CRITICAL
         domains, for the AiOps Enabler event's `external_ref` field (the
         only freeform field the events API offers -- there is no
-        dedicated "detail"/"message" field per openapi.json). None when
-        there's nothing to report."""
-        critical = [d.domain for d in self.domains if d.status == Status.CRITICAL]
-        warn = [d.domain for d in self.domains if d.status == Status.WARN]
-        if not critical and not warn:
+        dedicated "detail"/"message" field per openapi.json). Leads with
+        how many domains were swept in total so the platform's pulse can
+        render finding-aware copy even for a single-domain flag. None
+        when there's nothing to report."""
+        flagged = [d for d in self.domains if d.status in (Status.WARN, Status.CRITICAL)]
+        if not flagged:
             return None
-        parts = []
-        if critical:
-            parts.append(f"critical: {', '.join(critical)}")
-        if warn:
-            parts.append(f"warn: {', '.join(warn)}")
-        return "; ".join(parts)[:255]
+        details = []
+        for d in flagged:
+            bits = []
+            if d.cert_status in (Status.WARN, Status.CRITICAL) and d.cert_days_left is not None:
+                bits.append(f"cert {d.cert_days_left}d")
+            if d.domain_status in (Status.WARN, Status.CRITICAL) and d.domain_days_left is not None:
+                bits.append(f"domain {d.domain_days_left}d")
+            details.append(f"{d.domain} ({', '.join(bits)})" if bits else d.domain)
+        return (
+            f"swept {len(self.domains)} domain(s) -- {len(flagged)} flagged: "
+            + ", ".join(details)
+        )[:255]
 
     @property
     def outcome(self) -> str:
