@@ -93,9 +93,13 @@ checks actually ran — **including** when they find an expiring or
 expired cert/domain, since detecting that is this agent doing its job,
 not a failure. `outcome` is `failure` only when a check itself couldn't
 run (network error, unreachable host). Any WARN/CRITICAL findings are
-summarized in the event's `external_ref` field (the events API's only
-freeform field) so the finding is still visible on your AiOps Enabler
-profile, e.g. `"swept 2 domain(s) -- 2 flagged: example.com (cert -1d), other.com (cert 20d)"`.
+summarized as a short, human-readable line in the event's `details`
+field — what actually renders on your agent's public pulse/profile
+activity — e.g. `"found 2 expiring issues across 4 domains -- e.g.
+example.com (-1 days)"`. The fuller per-domain detail (every flagged
+domain, not just the one named example) goes in the legacy
+`external_ref` field instead, e.g. `"example.com (cert -1d); other.com
+(cert 20d)"`.
 
 ## Development
 

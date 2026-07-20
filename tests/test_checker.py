@@ -110,7 +110,7 @@ def test_run_checks_outcome_success_when_only_warnings():
     assert not result.all_clear
     assert not result.has_errors
     assert result.outcome == "success"
-    assert result.findings_summary == "swept 1 domain(s) -- 1 flagged: a.com (cert 20d)"
+    assert result.findings_summary == "found 1 expiring issue across 1 domain -- e.g. a.com (20 days)"
 
 
 def test_run_checks_outcome_success_when_critical_present():
@@ -123,7 +123,7 @@ def test_run_checks_outcome_success_when_critical_present():
     assert result.has_critical_or_error
     assert not result.has_errors
     assert result.outcome == "success"
-    assert result.findings_summary == "swept 1 domain(s) -- 1 flagged: a.com (cert -5d)"
+    assert result.findings_summary == "found 1 expiring issue across 1 domain -- e.g. a.com (-5 days)"
 
 
 def test_run_checks_outcome_failure_when_check_errors():
@@ -141,7 +141,7 @@ def test_run_checks_outcome_failure_when_check_errors():
     assert result.outcome == "failure"
 
 
-def test_findings_summary_lists_both_critical_and_warn():
+def test_findings_summary_names_only_one_example_with_a_count():
     config = Config(domains=("crit.com", "warn.com"), warn_days=30, critical_days=7)
 
     def cert_fetcher(domain: str, port: int, timeout: float) -> dict:
@@ -152,6 +152,21 @@ def test_findings_summary_lists_both_critical_and_warn():
     result = run_checks(
         config, now=NOW, cert_fetcher=cert_fetcher, rdap_fetcher=_rdap_fetcher_in(365)
     )
-    assert result.findings_summary == (
-        "swept 2 domain(s) -- 2 flagged: crit.com (cert -1d), warn.com (cert 20d)"
+    assert result.findings_summary == "found 2 expiring issues across 2 domains -- e.g. crit.com (-1 days)"
+    # warn.com is NOT named in the human summary -- only in the fuller
+    # technical_summary (reported separately as external_ref).
+    assert "warn.com" not in result.findings_summary
+
+
+def test_technical_summary_lists_every_flagged_domain():
+    config = Config(domains=("crit.com", "warn.com"), warn_days=30, critical_days=7)
+
+    def cert_fetcher(domain: str, port: int, timeout: float) -> dict:
+        days = -1 if domain == "crit.com" else 20
+        expiry = NOW + timedelta(days=days)
+        return {"notAfter": expiry.strftime("%b %d %H:%M:%S %Y GMT")}
+
+    result = run_checks(
+        config, now=NOW, cert_fetcher=cert_fetcher, rdap_fetcher=_rdap_fetcher_in(365)
     )
+    assert result.technical_summary == "crit.com (cert -1d); warn.com (cert 20d)"

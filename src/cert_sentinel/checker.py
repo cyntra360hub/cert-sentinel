@@ -12,6 +12,10 @@ from cert_sentinel.domain import RdapFetcher, fetch_rdap_record, get_domain_expi
 from cert_sentinel.tls import CertFetcher, fetch_peer_cert, get_certificate_expiry
 
 
+def _pluralize(n: int, singular: str, plural: str | None = None) -> str:
+    return f"{n} {singular if n == 1 else (plural or singular + 's')}"
+
+
 class Status(str, Enum):
     OK = "ok"
     WARN = "warn"
@@ -66,29 +70,49 @@ class CheckResult:
         )
 
     @property
+    def _flagged(self) -> list["DomainResult"]:
+        return [d for d in self.domains if d.status in (Status.WARN, Status.CRITICAL)]
+
+    @property
     def findings_summary(self) -> str | None:
-        """A compact, human-readable summary of any WARN/CRITICAL
-        domains, for the AiOps Enabler event's `external_ref` field (the
-        only freeform field the events API offers -- there is no
-        dedicated "detail"/"message" field per openapi.json). Leads with
-        how many domains were swept in total so the platform's pulse can
-        render finding-aware copy even for a single-domain flag. None
-        when there's nothing to report."""
-        flagged = [d for d in self.domains if d.status in (Status.WARN, Status.CRITICAL)]
+        """A short, human-readable findings summary for the AiOps
+        Enabler event's `details` field -- what actually renders on the
+        agent's public pulse/profile activity (see api-guide.md §4).
+        Deduplicated to a single named example plus a count rather than
+        an exhaustive per-domain list; carries no technical identifiers.
+        None when there's nothing to report."""
+        flagged = self._flagged
         if not flagged:
             return None
-        details = []
+        example = flagged[0]
+        days = (
+            example.cert_days_left
+            if example.cert_status in (Status.WARN, Status.CRITICAL)
+            else example.domain_days_left
+        )
+        example_text = f"{example.domain} ({_pluralize(days, 'day')})" if days is not None else example.domain
+        issue_word = _pluralize(len(flagged), "expiring issue")
+        domain_word = _pluralize(len(self.domains), "domain")
+        return f"found {issue_word} across {domain_word} -- e.g. {example_text}"[:500]
+
+    @property
+    def technical_summary(self) -> str | None:
+        """The fuller, per-domain technical detail (every flagged
+        domain, with day counts) for the event's legacy `external_ref`
+        field -- kept separate from `findings_summary` so the
+        human-facing summary never has to carry this level of detail."""
+        flagged = self._flagged
+        if not flagged:
+            return None
+        parts = []
         for d in flagged:
             bits = []
             if d.cert_status in (Status.WARN, Status.CRITICAL) and d.cert_days_left is not None:
                 bits.append(f"cert {d.cert_days_left}d")
             if d.domain_status in (Status.WARN, Status.CRITICAL) and d.domain_days_left is not None:
                 bits.append(f"domain {d.domain_days_left}d")
-            details.append(f"{d.domain} ({', '.join(bits)})" if bits else d.domain)
-        return (
-            f"swept {len(self.domains)} domain(s) -- {len(flagged)} flagged: "
-            + ", ".join(details)
-        )[:255]
+            parts.append(f"{d.domain} ({', '.join(bits)})" if bits else d.domain)
+        return "; ".join(parts)[:255]
 
     @property
     def outcome(self) -> str:
