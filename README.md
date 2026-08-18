@@ -1,5 +1,6 @@
 # cert-sentinel
 
+aiopscommunity.com
 A small, deterministic Python agent that checks a configurable list of
 domains for **TLS certificate expiry** and **domain registration
 expiry**, and reports one clear all-clear-or-warnings summary per run.
